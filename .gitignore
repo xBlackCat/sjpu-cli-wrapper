@@ -1,0 +1,9 @@
+/dist/
+/report/
+/out/
+/.gradle/
+/build/
+/extras/log/
+*.log*
+gradlew*
+/gradle

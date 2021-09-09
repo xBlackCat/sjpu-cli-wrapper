@@ -1,0 +1,193 @@
+plugins {
+    id 'java'
+    id 'java-library'
+    id 'maven-publish'
+    id 'signing'
+    id 'idea'
+}
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+version = file("${projectDir}/version.txt").getText('UTF-8')
+group = 'org.xblackcat.sjpu'
+
+def projectTitle = 'Library for holding common logic to work with CLI'
+ext.commonManifest = manifest {
+    attributes(
+            "Implementation-Title": projectTitle,
+            "Implementation-Version": version
+    )
+}
+
+gradle.taskGraph.whenReady { taskGraph ->
+    println("Project version: $version")
+}
+
+jar {
+    doFirst {
+        manifest = project.manifest {
+            from commonManifest
+        }
+    }
+}
+
+compileJava.options.encoding = 'UTF-8'
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
+
+configurations.all {
+    resolutionStrategy {
+        failOnVersionConflict()
+    }
+    canBeResolved = true
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    api group: 'org.apache.commons', name: 'commons-lang3', version: '[3.12.0,4.0)'
+    api group: 'commons-cli', name: 'commons-cli', version: '[1.4,2.0)'
+
+    testImplementation group: 'junit', name: 'junit', version: '4.12'
+}
+
+task sourcesJar(type: Jar) {
+    from sourceSets.main.allSource
+    archiveClassifier.set('sources')
+    doFirst {
+        manifest = project.manifest {
+            from commonManifest
+        }
+    }
+}
+
+javadoc {
+    options.encoding = 'UTF-8'
+    title = projectTitle
+    failOnError = false
+}
+
+task javadocJar(dependsOn: javadoc, type: Jar) {
+    from javadoc.outputs.files
+    archiveClassifier.set('javadoc')
+    doFirst {
+        manifest = project.manifest {
+            from commonManifest
+        }
+    }
+}
+
+//[compileJava, compileTestJava]*.options.collect {options ->
+//  options.deprecation = true
+//  options.compilerArgs.add '-Xlint'
+//  options.compilerArgs.add '-Xlint:-unchecked'
+//  options.compilerArgs.add '-Xlint:-serial'
+//  options.compilerArgs.add '-Xlint:-rawtypes'
+//}
+
+idea {
+    module {
+        inheritOutputDirs = true
+    }
+}
+
+task sourcesZip(type: Zip) {
+    from project.projectDir
+    include 'src/**'
+    include 'test/**'
+    include 'build.*'
+    include 'LICENSE'
+    into('lib') {
+        from configurations.all
+        include '*'
+    }
+    archiveClassifier.set('sources')
+}
+
+task binZip(dependsOn: 'jar', type: Zip) {
+    from jar.outputs.files
+    into('dep') {
+        from configurations.all
+    }
+    archiveClassifier.set('bin')
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir 'src/java'
+        }
+        resources {
+            srcDir 'src/res'
+        }
+    }
+    test {
+        java {
+            srcDir 'test/java'
+        }
+        resources {
+            srcDir 'test/res'
+        }
+    }
+}
+
+artifacts {
+    archives jar
+    archives javadocJar
+    archives sourcesJar
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            pom {
+                name = projectTitle
+                packaging = 'jar'
+                description = 'Library for holding common logic to work with CLI: parsing parameters to target objects'
+                url = 'https://github.com/xBlackCat/sjpu-cli-wrapper'
+
+                scm {
+                    url = 'scm:git@github.com:xBlackCat/sjpu-cli-wrapper.git'
+                    connection = 'scm:git@github.com:xBlackCat/sjpu-cli-wrapper.git'
+                    developerConnection = 'scm:git@github.com:xBlackCat/sjpu-cli-wrapper.git'
+                }
+
+                licenses {
+                    license {
+                        name = 'The Apache Software License, Version 2.0'
+                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                        distribution = 'repo'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = 'xBlackCat'
+                        name = 'Zhukov Alexei'
+                        email = 'xblackcat@gmail.com'
+                    }
+                }
+            }
+
+            repositories {
+                maven {
+                    url = mavenCentralUrl
+                    credentials {
+                        username = mavenCentralUser
+                        password = mavenCentralPassword
+                    }
+                }
+            }
+        }
+    }
+}
+
+signing {
+    sign publishing.publications.mavenJava
+}
+
+task buildAll(dependsOn: ['build', 'sourcesJar', 'binZip', 'sourcesZip', 'javadocJar']) {}
