@@ -7,3 +7,4 @@
 *.log*
 gradlew*
 /gradle
+/.idea

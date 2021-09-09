@@ -141,6 +141,11 @@ artifacts {
     archives sourcesJar
 }
 
+java {
+    withJavadocJar()
+    withSourcesJar()
+}
+
 publishing {
     publications {
         mavenJava(MavenPublication) {
@@ -149,6 +154,8 @@ publishing {
                 packaging = 'jar'
                 description = 'Library for holding common logic to work with CLI: parsing parameters to target objects'
                 url = 'https://github.com/xBlackCat/sjpu-cli-wrapper'
+
+                from components.java
 
                 scm {
                     url = 'scm:git@github.com:xBlackCat/sjpu-cli-wrapper.git'
