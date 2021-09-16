@@ -11,6 +11,7 @@ import org.xblackcat.sjpu.cli.reader.ProgressOutStream;
 
 import java.io.*;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
@@ -22,6 +23,7 @@ import java.util.function.Function;
 import java.util.function.IntFunction;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
+import java.util.zip.GZIPOutputStream;
 
 public class OptionUtils {
     private static final char[] multipliers = new char[]{' ', 'k', 'm', 'g', 't'};
@@ -160,6 +162,65 @@ public class OptionUtils {
             return System.out;
         }
         return new NullPrintStream();
+    }
+
+    public static OutputStream getOutputStream(CommandLine line, String fileNameOption, String gzipOption) throws IOException {
+        return getOutputStream(line, fileNameOption, gzipOption, true);
+    }
+
+    private static OutputStream getOutputStream(
+            CommandLine line,
+            String fileNameOption,
+            String gzipOption,
+            boolean stdOutAsDefault
+    ) throws IOException {
+        final OutputStream outputStream;
+        if (line.hasOption(fileNameOption)) {
+            String outFileName = line.getOptionValue(fileNameOption);
+            if (Objects.equals("-", outFileName)) {
+                outputStream = System.out;
+            } else {
+                boolean useGzip = line.hasOption(gzipOption);
+                final Path path = Paths.get(outFileName);
+                if (useGzip) {
+                    outputStream = new GZIPOutputStream(Files.newOutputStream(
+                            path,
+                            StandardOpenOption.TRUNCATE_EXISTING,
+                            StandardOpenOption.CREATE
+                    ));
+                } else {
+                    outputStream = Files.newOutputStream(path, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
+                }
+            }
+        } else if (stdOutAsDefault) {
+            outputStream = System.out;
+        } else {
+            outputStream = new OutputStream() {
+                private volatile boolean closed;
+
+                private void ensureOpen() throws IOException {
+                    if (closed) {
+                        throw new IOException("Stream closed");
+                    }
+                }
+
+                @Override
+                public void write(int b) throws IOException {
+                    ensureOpen();
+                }
+
+                @Override
+                public void write(byte[] b, int off, int len) throws IOException {
+                    ensureOpen();
+                }
+
+                @Override
+                public void close() {
+                    closed = true;
+                }
+            };
+        }
+        return outputStream;
     }
 
     public static <T extends Comparable<? super T>> Bounds<T> getBounds(
@@ -364,7 +425,43 @@ public class OptionUtils {
     ) throws ParseException {
         return getNumericOption(line, optionName, Number::longValue, valueTester, defVal, valueName);
     }
+    
+    public static long getAmountOption(CommandLine line, String optionName, String name) {
+        return getAmountOption(line, optionName, null, name);
+    }
 
+    public static long getAmountOption(
+            CommandLine line,
+            String optionName,
+            Long defVal,
+            String valueName
+    ) {
+        return getAmountOption(line, optionName, LIMIT_VALUE_CHECK, defVal, valueName);
+    }
+
+    public static long getAmountOption(
+            CommandLine line,
+            String optionName,
+            Function<Number, Function<String, String>> valueTester,
+            Long defVal,
+            String valueName
+    ) {
+        final String value =  line.getOptionValue(optionName);
+        if (value != null) {
+            final long size = parseSize(value);
+            final Function<String, String> exceptionText = valueTester.apply(size);
+            if (exceptionText == null) {
+                return size;
+            }
+            throw new IllegalArgumentException(exceptionText.apply(valueName));
+        }
+
+        if (defVal != null) {
+            return defVal;
+        }
+        throw new IllegalArgumentException("No value specified for " + valueName);
+    }
+    
     public static double getDoubleOption(CommandLine line, String optionName, String name) throws ParseException {
         return getDoubleOption(line, optionName, null, name);
     }
@@ -398,9 +495,10 @@ public class OptionUtils {
     ) throws ParseException {
         final Number value = (Number) line.getParsedOptionValue(optionName);
         if (value != null) {
-            final Function<String, String> exceptionText = valueTester.apply(defVal);
+            final T targetValue = fieldExtractor.apply(value);
+            final Function<String, String> exceptionText = valueTester.apply(targetValue);
             if (exceptionText == null) {
-                return fieldExtractor.apply(value);
+                return targetValue;
             }
             throw new IllegalArgumentException(exceptionText.apply(valueName));
         }
@@ -445,7 +543,7 @@ public class OptionUtils {
                     }
                 }
                 if (showHelp) {
-                    System.err.println("Missing one of required options: " + String.join(", ", (CharSequence[]) requiredAnyOpt));
+                    System.err.println("Missing one of required options: " + String.join(", ", requiredAnyOpt));
                 }
             }
         } catch (ParseException e) {

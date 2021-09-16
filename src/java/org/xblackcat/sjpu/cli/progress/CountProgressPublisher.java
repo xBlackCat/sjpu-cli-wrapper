@@ -11,7 +11,8 @@ public class CountProgressPublisher extends AProgressPublisher {
     }
 
     @Override
-    public void publish(long current) {
+    public boolean publish(long current) {
         output.accept(String.format("\rProcessed %d of %d", current, total));
+        return true;
     }
 }

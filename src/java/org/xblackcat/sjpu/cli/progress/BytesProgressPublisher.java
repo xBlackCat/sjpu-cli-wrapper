@@ -8,7 +8,8 @@ public class BytesProgressPublisher extends AProgressPublisher {
     }
 
     @Override
-    public void publish(long current) {
+    public boolean publish(long current) {
         output.accept(String.format("\rProcessed %d bytes", current));
+        return true;
     }
 }

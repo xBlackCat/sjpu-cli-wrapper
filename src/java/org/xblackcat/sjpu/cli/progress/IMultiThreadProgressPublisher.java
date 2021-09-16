@@ -8,11 +8,17 @@ public interface IMultiThreadProgressPublisher extends IProgressPublisher {
         }
 
         @Override
-        public void publish(long current) {
+        public boolean publish(long current) {
+            return false;
         }
 
         @Override
         public void done() {
+        }
+
+        @Override
+        public boolean isDone() {
+            return false;
         }
     };
 

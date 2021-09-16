@@ -1,17 +1,25 @@
 package org.xblackcat.sjpu.cli.progress;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
-public class MultiThreadedProgressPublisher extends AProgressPublisher implements IMultiThreadProgressPublisher {
-    private final Map<String, String> publishedInfos = new LinkedHashMap<>();
+public class StepByStepProgressPublisher extends AProgressPublisher implements IMultiThreadProgressPublisher {
     private final Lock lock = new ReentrantLock();
+    private IProgressPublisher currentPublisher;
+    private String currentName;
+    private String currentProgress;
 
-    public MultiThreadedProgressPublisher(Consumer<String> output) {
+    private int step;
+    private int totalSteps;
+
+    public StepByStepProgressPublisher(Consumer<String> output) {
+        this(output, 0);
+    }
+
+    public StepByStepProgressPublisher(Consumer<String> output, int totalSteps) {
         super(output);
+        this.totalSteps = totalSteps;
     }
 
     @Override
@@ -19,7 +27,7 @@ public class MultiThreadedProgressPublisher extends AProgressPublisher implement
         final Consumer<String> consumer = s -> {
             lock.lock();
             try {
-                publishedInfos.put(name, s);
+                currentProgress = s;
             } finally {
                 lock.unlock();
             }
@@ -27,6 +35,19 @@ public class MultiThreadedProgressPublisher extends AProgressPublisher implement
             publishAll();
         };
         final IProgressPublisher publisher = builder.apply(consumer, total);
+
+        lock.lock();
+        try {
+            if (currentPublisher != null && !currentPublisher.isDone()) {
+                throw new IllegalStateException("Previous publisher " + currentName + " is not finished!");
+            }
+            step++;
+            currentPublisher = publisher;
+            currentName = name;
+        } finally {
+            lock.unlock();
+        }
+
         return new IProgressPublisher() {
             @Override
             public boolean publish(long current) {
@@ -39,24 +60,13 @@ public class MultiThreadedProgressPublisher extends AProgressPublisher implement
 
             @Override
             public void done() {
-                lock.lock();
-                try {
-                    publishedInfos.remove(name);
-                } finally {
-                    lock.unlock();
-                }
-
+                publisher.done();
                 publishAll();
             }
 
             @Override
             public boolean isDone() {
-                lock.lock();
-                try {
-                    return !publishedInfos.containsKey(name);
-                } finally {
-                    lock.unlock();
-                }
+                return publisher.isDone();
             }
         };
     }
@@ -68,18 +78,21 @@ public class MultiThreadedProgressPublisher extends AProgressPublisher implement
     }
 
     private void publishAll() {
-        final StringBuilder progress = new StringBuilder("\rTotal: ");
+        final StringBuilder progress = new StringBuilder("\rStep: ");
         lock.lock();
         try {
-            progress.append(publishedInfos.size());
-            progress.append(": [ ");
-            for (Map.Entry<String, String> e : publishedInfos.entrySet()) {
-                progress.append(e.getKey());
-                progress.append(": ");
-                progress.append(e.getValue(), 1, e.getValue().length());
-                progress.append("; ");
+            progress.append(step);
+            if (totalSteps > 0) {
+                progress.append(" of ");
+                progress.append(totalSteps);
             }
-            progress.append("]\t\t\t\t\t\t\t");
+            if (currentName != null) {
+                progress.append(": ");
+                progress.append(currentName);
+                progress.append(": ");
+                progress.append(currentProgress, 1, currentProgress.length());
+            }
+            progress.append("\t\t\t\t\t\t\t");
         } finally {
             lock.unlock();
         }
@@ -89,7 +102,6 @@ public class MultiThreadedProgressPublisher extends AProgressPublisher implement
 
     @Override
     public void done() {
-        publishedInfos.clear();
         super.done();
     }
 }
